@@ -13,14 +13,18 @@ jobs:
       - name: 配置兼容 iOS 14 的 Flutter 环境 (3.24.5)
         uses: subosito/flutter-action@v2
         with:
-          flutter-version: '3.24.5' # 锁定 3.24.5，原生兼容 iOS 14.0
+          flutter-version: '3.24.5'
           cache: true
 
-      - name: 修复网络插件版本兼容 (锁定 connectivity_plus 6.1.4)
+      - name: 解除 Dart 版本限制与锁定插件兼容
         run: |
           python3 -c "
           with open('pubspec.yaml', 'r') as f:
               content = f.read()
+          import re
+          # 放宽 Dart SDK 版本限制到 3.0.0+
+          content = re.sub(r'sdk:\s*[\^><=0-9. \"\']+', 'sdk: \">=3.0.0 <4.0.0\"', content)
+          # 锁定 connectivity_plus 6.1.4 避免编译报错
           if 'dependency_overrides:' not in content:
               content += '\ndependency_overrides:\n  connectivity_plus: 6.1.4\n'
           else:
