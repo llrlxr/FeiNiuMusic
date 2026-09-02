@@ -1,6 +1,8 @@
 name: Build iOS IPA
 on:
   workflow_dispatch:
+permissions:
+  contents: write
 jobs:
   build-ios:
     runs-on: macos-14
@@ -41,9 +43,14 @@ jobs:
           codesign --force --deep --sign - Payload/Runner.app
           zip -r -y FeiNiuMusic_iOS14.ipa Payload
           rm -rf Payload
-      - name: 上传 IPA 产物供下载
-        uses: actions/upload-artifact@v4
+      - name: 创建 GitHub Release 并上传 IPA
+        uses: softprops/action-gh-release@v2
         with:
-          name: FeiNiuMusic-iPad-iOS14
-          path: FeiNiuMusic_iOS14.ipa
-          retention-days: 7
+          files: FeiNiuMusic_iOS14.ipa
+          tag_name: v1.6.5-ios14
+          name: 飞牛音乐 iOS14 版
+          body: |
+            适配 iPad Air 3 / iOS 14.0 的 IPA 包
+            安装方式：下载后用 TrollStore（巨魔）打开安装
+          draft: false
+          prerelease: false
