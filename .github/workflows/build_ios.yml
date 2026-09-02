@@ -1,11 +1,11 @@
 name: Build iOS IPA
 
 on:
-  workflow_dispatch: # 允许在网页端手动点击按钮触发
+  workflow_dispatch:
 
 jobs:
   build-ios:
-    runs-on: macos-14 # 使用 GitHub 免费提供的云端 macOS 编译机
+    runs-on: macos-14
     steps:
       - name: 检出代码
         uses: actions/checkout@v4
@@ -16,14 +16,33 @@ jobs:
           channel: 'stable'
           cache: true
 
-      - name: 安装项目依赖与 iOS Pods
-        run: |
-          flutter pub get
-          cd ios
-          pod install --repo-update
-          cd ..
+      - name: 预缓存 iOS 引擎
+        run: flutter precache --ios
 
-      - name: 编译无签名 iOS App
+      - name: 获取项目依赖
+        run: flutter pub get
+
+      - name: 配置 iOS 14.0 部署目标与依赖兼容
+        run: |
+          python3 -c "
+          with open('ios/Podfile', 'r') as f:
+              content = f.read()
+          import re
+          if re.search(r'#?\s*platform\s+:ios', content):
+              content = re.sub(r'#?\s*platform\s+:ios.*', \"platform :ios, '14.0'\", content)
+          else:
+              content = \"platform :ios, '14.0'\n\" + content
+          if 'flutter_additional_ios_build_settings(target)' in content:
+              replacement = '''flutter_additional_ios_build_settings(target)
+              target.build_configurations.each do |config|
+                config.build_settings['IPHONEOS_DEPLOYMENT_TARGET'] = '14.0'
+              end'''
+              content = content.replace('flutter_additional_ios_build_settings(target)', replacement)
+          with open('ios/Podfile', 'w') as f:
+              f.write(content)
+          "
+
+      - name: 编译 iOS Release 无签名工程
         run: |
           flutter build ios --release --no-codesign
 
