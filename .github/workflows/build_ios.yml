@@ -26,34 +26,6 @@ jobs:
         run: flutter precache --ios
       - name: 获取项目依赖
         run: flutter pub get
-      - name: 配置 iOS 14.0 部署目标
-        run: |
-          python3 -c "
-          p = 'ios/Runner.xcodeproj/project.pbxproj'
-          s = open(p).read()
-          s = s.replace('IPHONEOS_DEPLOYMENT_TARGET = 13.0;', 'IPHONEOS_DEPLOYMENT_TARGET = 14.0;')
-          open(p, 'w').write(s)
-          p = 'ios/Podfile'
-          lines = open(p).readlines()
-          out = []
-          has_platform = False
-          for line in lines:
-              st = line.strip()
-              if st.startswith('# platform :ios') or st.startswith('platform :ios'):
-                  out.append(\"platform :ios, '14.0'\n\")
-                  has_platform = True
-              elif 'flutter_additional_ios_build_settings(target)' in line:
-                  out.append(line)
-                  out.append('''    target.build_configurations.each do |config|
-              config.build_settings['IPHONEOS_DEPLOYMENT_TARGET'] = '14.0'
-            end
-''')
-              else:
-                  out.append(line)
-          if not has_platform:
-              out.insert(0, \"platform :ios, '14.0'\n\")
-          open(p, 'w').write(''.join(out))
-          "
       - name: 编译 iOS Release 工程
         run: flutter build ios --release --no-codesign
       - name: 打包并补全签名与 iOS 14 元数据
