@@ -28,7 +28,7 @@ jobs:
         run: flutter pub get
       - name: 提升工程部署目标到 14.0
         run: |
-          sed -i 's/IPHONEOS_DEPLOYMENT_TARGET = 13.0;/IPHONEOS_DEPLOYMENT_TARGET = 14.0;/g' ios/Runner.xcodeproj/project.pbxproj
+          python3 -c "p='ios/Runner.xcodeproj/project.pbxproj'; s=open(p).read().replace('IPHONEOS_DEPLOYMENT_TARGET = 13.0;','IPHONEOS_DEPLOYMENT_TARGET = 14.0;'); open(p,'w').write(s)"
           grep -c 'IPHONEOS_DEPLOYMENT_TARGET = 14.0;' ios/Runner.xcodeproj/project.pbxproj
       - name: 编译 iOS Release 工程
         run: flutter build ios --release --no-codesign
