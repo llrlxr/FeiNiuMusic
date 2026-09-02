@@ -1,0 +1,42 @@
+name: Build iOS IPA
+
+on:
+  workflow_dispatch: # 允许在网页端手动点击按钮触发
+
+jobs:
+  build-ios:
+    runs-on: macos-14 # 使用 GitHub 免费提供的云端 macOS 编译机
+    steps:
+      - name: 检出代码
+        uses: actions/checkout@v4
+
+      - name: 配置 Flutter 环境
+        uses: subosito/flutter-action@v2
+        with:
+          channel: 'stable'
+          cache: true
+
+      - name: 安装项目依赖与 iOS Pods
+        run: |
+          flutter pub get
+          cd ios
+          pod install --repo-update
+          cd ..
+
+      - name: 编译无签名 iOS App
+        run: |
+          flutter build ios --release --no-codesign
+
+      - name: 打包生成 IPA 文件
+        run: |
+          mkdir -p Payload
+          cp -r build/ios/iphoneos/Runner.app Payload/
+          zip -r -y FeiNiuMusic_iOS14.ipa Payload
+          rm -rf Payload
+
+      - name: 上传 IPA 产物供下载
+        uses: actions/upload-artifact@v4
+        with:
+          name: FeiNiuMusic-iPad-iOS14
+          path: FeiNiuMusic_iOS14.ipa
+          retention-days: 7
