@@ -1,3 +1,10 @@
+# ============================================================
+# FeiNiuMusic iOS 14 兼容版构建工作流（修正版）
+# 核心修复：Flutter 3.47.x 会在构建时强制把 iOS 部署目标改写成 15.0，
+#          导致 iOS 14 设备装上后闪退。锁定 Flutter 3.44.x（迁移目标 13.0），
+#          14.0 部署目标才能保留生效。
+# 用法：把本文件内容替换 .github/workflows/build_ios.yml 后手动触发。
+# ============================================================
 name: Build iOS IPA
 
 on:
@@ -10,37 +17,25 @@ jobs:
       - name: 检出代码
         uses: actions/checkout@v4
 
-      - name: 配置兼容 iOS 14 的 Flutter 环境 (3.24.5)
+      # 关键：锁 Flutter 3.44.x（Dart 3.12）
+      # - 满足本项目依赖约束（pubspec.lock: flutter>=3.44 / dart>=3.12）
+      # - 3.44.x 的 iOS 最低部署目标迁移为 13.0，14.0 不会被覆盖
+      # - 勿用 3.47.x（强制 15.0，iOS 14 闪退）；勿用 3.24.5（Dart 3.5 装不上依赖）
+      - name: 配置 Flutter 3.44.9 环境
         uses: subosito/flutter-action@v2
         with:
-          flutter-version: '3.24.5'
+          flutter-version: '3.44.9'
           cache: true
 
-      - name: 解除 Dart 版本限制与锁定插件兼容
+      # connectivity_plus 锁定 6.1.4（6.x 已兼容本项目的 List<ConnectivityResult> API，
+      # 避免 7.x 在旧工具链下的编译/兼容问题；如需 7.x 也可去掉此步）
+      - name: 锁定 connectivity_plus 兼容版本
         run: |
           python3 -c "
           with open('pubspec.yaml', 'r') as f:
-              lines = f.readlines()
-          new_lines = []
-          in_env = False
-          for line in lines:
-              stripped = line.strip()
-              if stripped.startswith('environment:'):
-                  in_env = True
-                  new_lines.append(line)
-              elif in_env and stripped.startswith('sdk:'):
-                  indent = line[:line.find('sdk:')]
-                  new_lines.append(f'{indent}sdk: \">=3.0.0 <4.0.0\"\n')
-              elif in_env and not line.startswith(' ') and not line.startswith('\t') and stripped:
-                  in_env = False
-                  new_lines.append(line)
-              else:
-                  new_lines.append(line)
-          content = ''.join(new_lines)
+              content = f.read()
           if 'dependency_overrides:' not in content:
               content += '\ndependency_overrides:\n  connectivity_plus: 6.1.4\n'
-          else:
-              content += '\n  connectivity_plus: 6.1.4\n'
           with open('pubspec.yaml', 'w') as f:
               f.write(content)
           "
@@ -51,47 +46,52 @@ jobs:
       - name: 获取项目依赖
         run: flutter pub get
 
-      - name: 配置 iOS 14.0 部署目标与依赖兼容
+      # 统一部署目标 14.0：工程(Runner) + Podfile(平台 + post_install)
+      - name: 配置 iOS 14.0 部署目标
         run: |
           python3 -c "
-          with open('ios/Podfile', 'r') as f:
-              lines = f.readlines()
-          new_lines = []
+          p = 'ios/Runner.xcodeproj/project.pbxproj'
+          s = open(p).read()
+          s = s.replace('IPHONEOS_DEPLOYMENT_TARGET = 13.0;', 'IPHONEOS_DEPLOYMENT_TARGET = 14.0;')
+          open(p, 'w').write(s)
+
+          p = 'ios/Podfile'
+          lines = open(p).readlines()
+          out = []
           has_platform = False
           for line in lines:
-              stripped = line.strip()
-              if stripped.startswith('# platform :ios') or stripped.startswith('platform :ios'):
-                  new_lines.append(\"platform :ios, '14.0'\n\")
+              st = line.strip()
+              if st.startswith('# platform :ios') or st.startswith('platform :ios'):
+                  out.append(\"platform :ios, '14.0'\n\")
                   has_platform = True
               elif 'flutter_additional_ios_build_settings(target)' in line:
-                  new_lines.append(line)
-                  new_lines.append('''    target.build_configurations.each do |config|
-                config.build_settings['IPHONEOS_DEPLOYMENT_TARGET'] = '14.0'
-              end\n''')
+                  out.append(line)
+                  out.append('''    target.build_configurations.each do |config|
+              config.build_settings['IPHONEOS_DEPLOYMENT_TARGET'] = '14.0'
+            end
+''')
               else:
-                  new_lines.append(line)
+                  out.append(line)
           if not has_platform:
-              new_lines.insert(0, \"platform :ios, '14.0'\n\")
-          content = ''.join(new_lines)
-          with open('ios/Podfile', 'w') as f:
-              f.write(content)
+              out.insert(0, \"platform :ios, '14.0'\n\")
+          open(p, 'w').write(''.join(out))
           "
 
       - name: 编译 iOS Release 工程
-        run: |
-          flutter build ios --release --no-codesign
+        run: flutter build ios --release --no-codesign
 
       - name: 打包并补全签名与 iOS 14 元数据
         run: |
           mkdir -p Payload
           cp -r build/ios/iphoneos/Runner.app Payload/
-          
-          # 确保最低系统版本精确标记为 14.0
-          /usr/libexec/PlistBuddy -c "Set :MinimumOSVersion 14.0" Payload/Runner.app/Info.plist 2>/dev/null || /usr/libexec/PlistBuddy -c "Add :MinimumOSVersion string 14.0" Payload/Runner.app/Info.plist
-          
-          # 执行 ad-hoc 本地假签名，确保巨魔和所有动态库能正常加载
+
+          # 最低系统版本精确标记为 14.0
+          /usr/libexec/PlistBuddy -c "Set :MinimumOSVersion 14.0" Payload/Runner.app/Info.plist 2>/dev/null || \
+          /usr/libexec/PlistBuddy -c "Add :MinimumOSVersion string 14.0" Payload/Runner.app/Info.plist
+
+          # ad-hoc 本地假签名，巨魔可直接安装
           codesign --force --deep --sign - Payload/Runner.app
-          
+
           zip -r -y FeiNiuMusic_iOS14.ipa Payload
           rm -rf Payload
 
